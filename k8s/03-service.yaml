@@ -1,0 +1,17 @@
+# LoadBalancer: Docker Desktop maps it to localhost:80; Minikube needs `minikube tunnel`;
+# GKE/EKS/AKS provision a public cloud load balancer automatically.
+apiVersion: v1
+kind: Service
+metadata:
+  name: heart-risk-api
+  namespace: heart-risk
+  labels:
+    app: heart-risk-api
+spec:
+  type: LoadBalancer
+  selector:
+    app: heart-risk-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

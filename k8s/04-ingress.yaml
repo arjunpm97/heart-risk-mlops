@@ -1,0 +1,22 @@
+# Requires an NGINX ingress controller:
+#   minikube addons enable ingress
+#   or: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.2/deploy/static/provider/cloud/deploy.yaml
+# Then add "127.0.0.1 heart-risk.local" (or the minikube IP) to your hosts file.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: heart-risk-api
+  namespace: heart-risk
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: heart-risk.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: heart-risk-api
+                port:
+                  number: 80

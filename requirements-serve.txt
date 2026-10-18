@@ -1,0 +1,10 @@
+# Minimal runtime for the serving container (must match training versions of sklearn/numpy)
+numpy==2.2.6
+pandas==2.2.3
+scikit-learn==1.6.1
+joblib==1.4.2
+requests==2.32.3
+fastapi==0.115.4
+uvicorn==0.32.0
+pydantic==2.9.2
+prometheus-client==0.21.0

@@ -1,0 +1,132 @@
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  IMAGE_NAME: heart-risk-api
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install flake8==7.1.1
+      - name: flake8
+        run: flake8 src api tests scripts report --count --show-source --statistics
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt && pip install -e .
+      - name: pytest
+        run: |
+          pytest -v --junitxml=test-results/junit.xml \
+                 --cov=heart_risk --cov=api --cov-report=xml:test-results/coverage.xml \
+                 --cov-report=term
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
+
+  train:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r requirements.txt && pip install -e .
+      - name: Download & clean data
+        run: python scripts/download_data.py --force
+      - name: EDA figures
+        run: python -m heart_risk.eda
+      - name: Train + track with MLflow
+        run: python -m heart_risk.train 2>&1 | tee train.log
+      - name: Quality gate (test ROC-AUC >= 0.85 and tuned recall >= 0.85)
+        run: |
+          python - <<'EOF'
+          import json, sys
+          m = json.load(open("models/metadata.json"))
+          auc = m["test_metrics"]["roc_auc"]
+          recall = m["test_metrics_tuned_threshold"]["recall"]
+          print(f"champion={m['algorithm']} threshold={m['threshold']} "
+                f"test_roc_auc={auc:.4f} tuned_recall={recall:.4f}")
+          failures = []
+          if auc < 0.85:
+              failures.append(f"ROC-AUC {auc:.3f} < 0.85")
+          if recall < 0.85:
+              failures.append(f"recall {recall:.3f} < 0.85")
+          for f in failures:
+              print(f"::error title=Model quality gate::{f}")
+          sys.exit(1 if failures else 0)
+          EOF
+      - uses: actions/upload-artifact@v4
+        with:
+          name: model-and-reports
+          path: |
+            models/
+            reports/
+            train.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlruns
+          path: mlruns/
+
+  docker:
+    needs: train
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: model-and-reports
+          path: .
+      - name: Build image
+        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
+      - name: Run container & smoke test
+        run: |
+          docker run -d --name api -p 8000:8000 $IMAGE_NAME:${{ github.sha }}
+          pip install requests==2.32.3
+          python scripts/smoke_test.py --url http://localhost:8000 --wait 60
+      - name: Container logs
+        if: always()
+        run: docker logs api | tee container.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: container-logs
+          path: container.log
+      - name: Push to GHCR (main only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          for TAG in ${{ github.sha }} latest; do
+            docker tag $IMAGE_NAME:${{ github.sha }} ghcr.io/$OWNER/$IMAGE_NAME:$TAG
+            docker push ghcr.io/$OWNER/$IMAGE_NAME:$TAG
+          done
