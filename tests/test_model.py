@@ -75,7 +75,9 @@ def test_predict_records_contract(trained_model_path, sample_record):
     assert list(to_frame([partial]).columns) == config.INPUT_FEATURES
 
 
-def test_training_run_end_to_end(tmp_path, clean_df):
+def test_training_run_end_to_end(tmp_path, clean_df, monkeypatch):
+    # keep this synthetic-data run out of the CI run's summary page
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
     data = tmp_path / "clean.csv"
     clean_df.to_csv(data, index=False)
     meta = run(fast=True, tracking_uri=(tmp_path / "mlruns").as_uri(), data_path=data,
