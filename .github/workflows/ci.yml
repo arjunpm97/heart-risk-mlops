@@ -25,7 +25,7 @@ jobs:
           cache: pip
       - run: pip install flake8==7.1.1
       - name: flake8
-        run: flake8 src api tests scripts report --count --show-source --statistics
+        run: flake8 src api tests scripts --count --show-source --statistics
 
   test:
     needs: lint

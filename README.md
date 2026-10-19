@@ -12,6 +12,7 @@ CI/CD pipeline.
 | Path | Purpose |
 |---|---|
 | `scripts/download_data.py` | Downloads the raw data from UCI (with a fallback mirror) and writes `data/processed/heart_clean.csv` |
+| `scripts/smoke_test.py` | Checks a running API with sample patients (`scripts/sample_input.json`); used locally and in CI |
 | `src/heart_risk/` | Library code: `data.py` (load and clean), `features.py` (feature engineering and preprocessing pipeline), `eda.py`, `train.py` (GridSearchCV and MLflow), `predict.py` |
 | `api/` | FastAPI app (`/predict`, `/predict/batch`, `/health`, `/ready`, `/model-info`, `/metrics`) |
 | `notebooks/` | Executed notebooks: 01 EDA, 02 training and tracking, 03 inference |
@@ -22,8 +23,8 @@ CI/CD pipeline.
 | `k8s/` | Namespace, ConfigMap, Deployment, LoadBalancer Service, Ingress, HPA, `monitoring/` |
 | `monitoring/` | Prometheus config, Grafana datasource and dashboard provisioning |
 | `.github/workflows/ci.yml` | lint, then test, then train (with quality gate), then docker build, smoke test and push |
-| `report/build_report.py` | Generates the final report `report/MLOps_Assignment_Report.docx` |
-| `screenshots/` | Evidence screenshots used by the report |
+| `report/` | Final project report (PDF) |
+| `screenshots/` | Evidence screenshots: MLflow, CI/CD, Docker, Kubernetes, monitoring |
 
 ## 1. Setup (clean environment)
 
@@ -43,14 +44,16 @@ scikit-learn and numpy versions.
 python scripts/download_data.py          # data/raw + data/processed/heart_clean.csv
 python -m heart_risk.eda                 # reports/figures/*.png
 python -m heart_risk.train               # 3 model families, 82 tuned candidates, MLflow runs
-mlflow ui --backend-store-uri ./mlruns   # http://127.0.0.1:5000
-python scripts/build_notebooks.py        # (re)execute the notebooks
+mlflow ui --backend-store-uri ./mlruns --port 5001   # http://127.0.0.1:5001
 ```
 
+The notebooks in `notebooks/` (EDA, training and tracking, inference) can be re-run in Jupyter or
+VS Code with **Run All**.
+
 `train.py` logs one parent run per model family and one nested run per hyperparameter
-combination. It picks the champion by mean 5-fold CV ROC-AUC and exports it to
-`models/model.joblib`. The file is a complete sklearn `Pipeline` (feature engineering,
-imputation, scaling and encoding, then the model), so it accepts raw patient JSON.
+combination, and exports the champion to `models/model.joblib`. The file is a complete sklearn
+`Pipeline` (feature engineering, imputation, scaling and encoding, then the model), so it
+accepts raw patient JSON.
 
 The champion is picked by a stability-penalised score (mean CV ROC-AUC minus its standard
 deviation). Its decision threshold is then tuned on out-of-fold predictions for at least 90%
@@ -87,13 +90,6 @@ curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" \
 #  "model_version":"logistic_regression-1.0.0","request_id":"..."}
 ```
 
-PowerShell:
-
-```powershell
-$body = '{"age":63,"sex":1,"cp":1,"trestbps":145,"chol":233,"fbs":1,"restecg":2,"thalach":150,"exang":0,"oldpeak":2.3,"slope":3,"ca":0,"thal":6}'
-Invoke-RestMethod -Uri http://localhost:8000/predict -Method Post -ContentType "application/json" -Body $body
-```
-
 You can also open http://localhost:8000/docs and use **Try it out**.
 
 ## 5. Monitoring stack (Docker Compose)
@@ -112,14 +108,21 @@ prediction with its inputs. Use `docker logs heart-risk-api` or `kubectl logs` t
 
 ## 6. Kubernetes deployment (Docker Desktop or Minikube)
 
-```powershell
-# Docker Desktop: Settings -> Kubernetes -> Enable
-.\scripts\deploy_k8s.ps1
-# Minikube
-minikube start --cpus 2 --memory 4096
-.\scripts\deploy_k8s.ps1 -Minikube
-minikube tunnel          # separate terminal, exposes the LoadBalancer
+Enable Kubernetes in Docker Desktop (Settings → Kubernetes, cluster type kubeadm), then:
+
+```bash
+docker build -t heart-risk-api:1.0.0 .
+kubectl apply -f k8s/00-namespace.yaml
+kubectl apply -f k8s/
+kubectl -n heart-risk create configmap grafana-dashboards \
+  --from-file=monitoring/grafana/dashboards/heart_risk_dashboard.json \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f k8s/monitoring/
+kubectl -n heart-risk rollout status deployment/heart-risk-api --timeout=180s
 ```
+
+With Minikube instead, run `eval $(minikube docker-env)` before `docker build`, and
+`minikube tunnel` in a separate terminal to expose the LoadBalancer.
 
 Verify:
 
@@ -150,9 +153,6 @@ Each job depends on the previous one, so any failure stops the pipeline with cle
 
 ## 8. Report
 
-```bash
-python report/build_report.py --name "..." --student-id ... --repo-url ... --video-url ...
-```
-
-The report is built from the real project outputs (metrics, EDA and training figures) and the
-evidence screenshots in `screenshots/`, and is saved as `report/MLOps_Assignment_Report.docx`.
+The final report is in `report/`. It covers setup, EDA and modelling choices, the experiment
+tracking summary, the architecture, and the CI/CD, deployment and monitoring evidence from
+`screenshots/`.
