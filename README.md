@@ -29,6 +29,8 @@ CI/CD pipeline.
 ## 1. Setup (clean environment)
 
 ```bash
+git clone https://github.com/arjunpm97/heart-risk-mlops
+cd heart-risk-mlops
 python -m venv .venv
 # Windows: .venv\Scripts\activate      Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
@@ -61,7 +63,7 @@ recall, because missing a sick patient is worse than a false alarm.
 
 Current champion: **Logistic Regression** (C=0.5, L2, balanced). CV ROC-AUC 0.908 ± 0.017;
 hold-out test ROC-AUC 0.961. At the tuned threshold of 0.302, test recall is 0.964 and
-precision 0.711 (at 0.5 they are 0.929 and 0.813). The API also returns a `risk_band`
+precision 0.711 (at 0.5 they are 0.929 and 0.812). The API also returns a `risk_band`
 (low / moderate / high).
 
 ## 3. Tests and lint
@@ -133,7 +135,7 @@ python scripts/smoke_test.py --url http://localhost            # LoadBalancer
 kubectl -n heart-risk port-forward svc/grafana 3000:3000
 ```
 
-For a cloud cluster (GKE, EKS or AKS), CI pushes `ghcr.io/<owner>/heart-risk-api:latest` on every
+For a cloud cluster (GKE, EKS or AKS), CI pushes `ghcr.io/arjunpm97/heart-risk-api:latest` on every
 push to `main`. Change `image:` in `k8s/02-deployment.yaml` to that tag and run
 `kubectl apply -f k8s/`. The `LoadBalancer` Service then gets a public IP.
 
@@ -151,8 +153,10 @@ push to `main`. Change `image:` in `k8s/02-deployment.yaml` to that tag and run
 
 Each job depends on the previous one, so any failure stops the pipeline with clear logs.
 
-## 8. Report
+## 8. Report and Video
 
-The final report is in `report/`. It covers setup, EDA and modelling choices, the experiment
+The final report is in `report/MLOps_Assignment_Report.pdf`. It covers setup, EDA and modelling choices, the experiment
 tracking summary, the architecture, and the CI/CD, deployment and monitoring evidence from
 `screenshots/`.
+
+Video walkthrough of the pipeline: https://drive.google.com/file/d/13LKzNS0Wq5nVIOyBUQhqACICXFJaL9Uy/view?usp=sharing 
